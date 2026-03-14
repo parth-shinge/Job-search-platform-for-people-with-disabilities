@@ -120,7 +120,7 @@ Optional:
 - Install developer tools with:
 
 ```powershell
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 - Keep `.env` out of version control. A template is provided in `.env.example`.
