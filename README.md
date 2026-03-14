@@ -27,6 +27,7 @@ A full-stack, accessibility-focused job platform built with Streamlit (frontend)
 ├── pages/                  # Streamlit multipage app
 ├── utils/                  # Database models and data utilities
 ├── assets/                 # Resume template helpers
+├── tests/                  # Smoke and contract tests
 ├── requirements.txt
 └── .env.example
 ```
@@ -125,6 +126,13 @@ pip install -r requirements.txt
 
 - Keep `.env` out of version control. A template is provided in `.env.example`.
 
-## License
+## Testing and Verification
 
-Add your preferred license (MIT, Apache-2.0, etc.) to make reuse terms explicit.
+Run the following from the project root:
+
+```powershell
+pytest -q
+python -m compileall api pages utils
+```
+
+If both commands complete without errors and the health endpoint returns `200`, the app setup is valid.

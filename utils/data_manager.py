@@ -1,22 +1,24 @@
-from sqlalchemy.orm import sessionmaker, joinedload
-from sqlalchemy import create_engine
-from .models import Company, Job, User, JobApplication
+from sqlalchemy.orm import joinedload
+from .models import Company, Job, User, JobApplication, Session
 import json
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-import os
-import smtplib
-from email.mime.text import MIMEText
-
-# Set the DATABASE_URL environment variable in your system or directly here
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://username:password@localhost:5432/mydatabase')
-
-engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
 
 def get_db_session():
     """Get database session"""
     return Session()
+
+
+def _safe_json_loads(value, default):
+    """Safely parse JSON text values stored in the database."""
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return default
 
 def load_jobs():
     """Load jobs from database with eager loading for related company"""
@@ -117,6 +119,8 @@ def get_company_jobs(company_id):
     session = get_db_session()
     try:
         jobs = session.query(Job).filter_by(company_id=company_id).all()
+        for job in jobs:
+            job.accommodations = _safe_json_loads(job.accommodations, [])
         return jobs
     except Exception as e:
         print(f"Error fetching company jobs: {str(e)}")
@@ -125,29 +129,55 @@ def get_company_jobs(company_id):
         session.close()
 
 def get_applications_for_company(company_id):
-    """Get job applications for a company"""
+    """Get job applications for a company in a UI-friendly format."""
     session = get_db_session()
     try:
         applications = session.query(JobApplication).options(
+            joinedload(JobApplication.user),
             joinedload(JobApplication.job).joinedload(Job.company)
         ).filter(JobApplication.job.has(company_id=company_id)).all()
-        return applications
+
+        results = []
+        for app in applications:
+            resume_payload = _safe_json_loads(app.user.resume_data if app.user else None, {})
+            user_name = app.user.name if app.user and app.user.name else "Unknown"
+            user_email = app.user.email if app.user else ""
+            job_title = app.job.title if app.job else "Unknown Role"
+
+            results.append({
+                "application_id": app.id,
+                "job_id": app.job_id,
+                "job_title": job_title,
+                "user_name": user_name,
+                "user_email": user_email,
+                "user_resume": resume_payload,
+                "status": app.status,
+                "applied_date": app.applied_date,
+            })
+
+        return results
     except Exception as e:
         print(f"Error fetching applications for company: {str(e)}")
         return []
     finally:
         session.close()
 
-def post_new_job(company_id, job_data):
-    """Post a new job for a company"""
+def post_new_job(job_data, company_id=None):
+    """Post a new job for a company."""
     session = get_db_session()
     try:
+        resolved_company_id = company_id if company_id is not None else job_data.get('company_id')
+        if resolved_company_id is None:
+            raise ValueError("company_id is required to post a job")
+
         job = Job(
-            company_id=company_id,
+            company_id=resolved_company_id,
             title=job_data['title'],
             location=job_data['location'],
             job_type=job_data['job_type'],
-            accommodations=job_data['accommodations'],
+            accommodations=json.dumps(job_data.get('accommodations', [])),
+            description=job_data.get('description', ''),
+            requirements=job_data.get('requirements', ''),
             posted_date=datetime.utcnow()
         )
         session.add(job)
@@ -159,20 +189,25 @@ def post_new_job(company_id, job_data):
     finally:
         session.close()
 
-def send_email_to_applicant(email, job_title):
-    """Send an email to the selected applicant"""
+def send_email_to_applicant(application_id, email_data):
+    """Placeholder notification flow that also updates application status."""
+    session = get_db_session()
     try:
-        msg = MIMEText(f"Congratulations! You have been selected for the position of {job_title}.")
-        msg['Subject'] = f"Job Application Update: {job_title}"
-        msg['From'] = "your_email@example.com"
-        msg['To'] = email
+        application = session.query(JobApplication).filter_by(id=application_id).first()
+        if not application:
+            return False
 
-        with smtplib.SMTP('smtp.example.com') as server:
-            server.login("your_email@example.com", "your_password")
-            server.sendmail(msg['From'], [msg['To']], msg.as_string())
+        if isinstance(email_data, dict) and email_data.get("status"):
+            application.status = email_data["status"]
+            session.commit()
+
+        return True
     except Exception as e:
+        session.rollback()
         print(f"Error sending email: {str(e)}")
-        raise
+        return False
+    finally:
+        session.close()
 
 def get_user_profile(email, password):
     """Get user profile by email and verify password"""
@@ -212,7 +247,7 @@ def create_user_if_not_exists(username, email, password, profile_data):
         new_user = User(
             username=username,
             email=email,
-            name=f"{profile_data['first_name']} {profile_data['last_name']}",
+            name=f"{profile_data.get('first_name', '')} {profile_data.get('last_name', '')}".strip(),
             password=hashed_password,
             resume_data=json.dumps(profile_data),
             created_at=datetime.utcnow()
@@ -248,13 +283,7 @@ def save_job_application(application_data, job_id):
         # Create or update user
         user = session.query(User).filter_by(email=application_data['email']).first()
         if not user:
-            user = User(
-                email=application_data['email'],
-                name=f"{application_data['first_name']} {application_data['last_name']}",
-                resume_data=json.dumps(application_data)
-            )
-            session.add(user)
-            session.commit()  # Commit to get the user ID
+            raise ValueError("User account not found. Please register and log in before applying.")
 
         # Create application
         application = JobApplication(
@@ -291,32 +320,3 @@ def get_job_applications(user_email):
         raise
     finally:
         session.close()
-        
-def get_applications_for_company(job_id):
-    """Get applications for a specific job"""
-    session = get_db_session()
-    try:
-        applications = (
-            session.query(JobApplication)
-            .filter(JobApplication.job_id == job_id)
-            .all()
-        )
-        return applications
-    except Exception as e:
-        print(f"Error getting applications: {str(e)}")
-        return []
-    finally:
-        session.close()
-
-def send_email_to_applicant(email, subject, message):
-    """Send email to job applicant"""
-    # This is a placeholder function
-    # In a real application, you would integrate with an email service
-    print(f"Sending email to {email}")
-    print(f"Subject: {subject}")
-    print(f"Message: {message}")
-    return True
-
-def save_job_application(user_data, job_id):
-    """Save job application"""
-    session = get_db_session()

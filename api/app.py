@@ -169,9 +169,6 @@ def get_user_applications(user_id):
 
 if __name__ == '__main__':
     try:
-        # Install Flask-Caching
-        os.system('pip install flask-caching')
-
         port = int(os.environ.get('FLASK_PORT', 5001))
         logger.info(f"Starting Flask API on port {port}")
         app.run(host='0.0.0.0', port=port)

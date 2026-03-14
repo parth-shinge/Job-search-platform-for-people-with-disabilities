@@ -104,4 +104,8 @@ if submitted:
         Best regards,
         The Able Connect Team
         """
-        
+        st.success("Verification request submitted successfully. Our team will contact you soon.")
+        st.info("You can now log in with your company email and password once your account is approved.")
+
+        if st.button("Go to Company Login"):
+            st.switch_page("pages/Company_Login.py")

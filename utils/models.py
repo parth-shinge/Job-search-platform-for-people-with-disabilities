@@ -4,14 +4,10 @@ from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean,
     ForeignKey, Text, DateTime, text, LargeBinary, ARRAY
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 import logging
 from sqlalchemy.pool import QueuePool
-from sqlalchemy import Column, Integer, String, Boolean, Text, ARRAY
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
 
 
 # Load environment variables from .env file
@@ -62,6 +58,9 @@ class Company(Base):
     commitments = Column(ARRAY(String), nullable=True)
     documentation = Column(ARRAY(String), nullable=True)
     additional_info = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+    accessibility_features = Column(ARRAY(String), nullable=True)
+    culture = Column(Text, nullable=True)
     password = Column(String, nullable=False)
     verified = Column(Boolean, default=False)
     verification_status = Column(String, nullable=False)
@@ -77,6 +76,7 @@ class Job(Base):
     job_type = Column(String(50))
     accommodations = Column(Text)  # Store as JSON string
     description = Column(Text)
+    requirements = Column(Text)
     posted_date = Column(DateTime, default=datetime.utcnow)
     company = relationship("Company", back_populates="jobs")
     applications = relationship("JobApplication", back_populates="job")
